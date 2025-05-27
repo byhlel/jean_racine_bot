@@ -244,6 +244,10 @@ module.exports = {
         if (err?.code === 35) {
           logger.error('SSL error, Root-Me banned us waiting for 5 minutes...')
           await pause(1000 * 60 * 5 + 10000)
+        }
+        if (err?.code === 403) {
+          logger.error('RIP Forbidden, Root-Me banned us waiting for 5 minutes...')
+          await pause(1000 * 60 * 5 + 10000)
         } else logger.error(err)
       }
     }
