@@ -12,6 +12,8 @@ module.exports = {
     .setDescription('Montre le TOP 10 CTFTime global ou d\'un pays')
     .addStringOption(option => option.setName('locale').setDescription('La locale du pays en question (ex: fr, us, ...)')),
   async execute(interaction) {
+    const currentYear = new Date().getFullYear();
+    const headers = ['User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'];
     // keep track of the execution to show the right error message if any
     // Get the locale parameter
     let locale = interaction.options.getString('locale')
@@ -23,7 +25,9 @@ module.exports = {
       .setURL('https://ctftime.org/')
       // Checks if the user provided a locale if not shows the general top 10
     if (!locale) {
-      let request = await curly.get('https://ctftime.org/api/v1/top/')
+      let request = await curly.get(`https://ctftime.org/api/v1/top/${currentYear}/`, {
+        httpHeader: headers
+    });
       if (request.statusCode === 200) {
         // Get the data
         request = request.data
@@ -43,7 +47,9 @@ module.exports = {
     // Prepare the url
     locale = locale.toUpperCase()
     // Scrap the data from the CTFTime website
-    let response = await curly.get('https://ctftime.org/stats/' + locale)
+    let response = await curly.get(`https://ctftime.org/stats/${locale}?year=${currentYear}`, {
+    httpHeader: headers
+});
     // Check if the request was successful
     if (response.statusCode === 200) {
       // Get the data
