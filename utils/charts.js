@@ -12,7 +12,7 @@ async function getScore(id_challenge) {
 }
 
 module.exports = {
-  async getMonthChart(guildId) {
+  async getMonthChart(guildId) { // On garde le nom ou on change pour get30DaysChart
     const channel = await mongoose.models.channels.findOne({ guildId })
     if (!channel) return logger.error(`Channel ${guildId} not found`)
 
@@ -22,107 +22,82 @@ module.exports = {
 
     const datasets = []
     const colors = [
-      'rgba(195, 40, 96, 1)',
-      '#ffa500',
-      '#00bcd4',
-      '#ffd700',
-      '#00ff77',
-      'rgb(255,0,213)',
-      'rgba(8,255,0,0.66)',
-      'rgba(75,192,192,0.42)',
-      'rgba(153,102,255,0.42)',
-      'rgba(255,123,0,0.2)'
+      'rgba(195, 40, 96, 1)', '#ffa500', '#00bcd4', '#ffd700', '#00ff77',
+      'rgb(255,0,213)', 'rgba(8,255,0,0.66)', 'rgba(75,192,192,0.42)',
+      'rgba(153,102,255,0.42)', 'rgba(255,123,0,0.2)'
     ]
+
+    const now = DateTime.now().setLocale('fr')
+    const startDate = now.minus({ days: 30 }).startOf('day')
+
+    // Génération des labels (les 30 derniers jours)
+    const labels = range(31).map(i => startDate.plus({ days: i }).toFormat('dd/MM'))
 
     let count = 0
     for (const user of tmpUsers) {
-      const now = DateTime.now().setLocale('fr')
-      const beginMonth = now.startOf('month')
-      const endMonth = beginMonth.setLocale('fr').plus({ month: 1 }).minus({ seconds: 1 })
-      const datesOfTheMonth = await Promise.all((user.validations || []).map(async v => (
-        { score: await getScore(Number(v.id_challenge)), date: DateTime.fromSQL(v.date).setLocale('fr') }
-      )))
-      const datesOfTheMonthSorted = datesOfTheMonth
-        .filter(i => i.date >= beginMonth && i.date <= endMonth)
-        .sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0)
-      const monthPoints = user.score - datesOfTheMonthSorted.reduce((accum, obj) => accum + obj.score, 0)
+      // On récupère toutes les validations avec leurs scores
+      const allValidations = await Promise.all((user.validations || []).map(async v => ({
+        score: await getScore(Number(v.id_challenge)),
+        date: DateTime.fromSQL(v.date).setLocale('fr')
+      })))
+
+      // Filtrer les validations qui ont eu lieu durant les 30 derniers jours
+      const recentValidations = allValidations
+        .filter(v => v.date >= startDate && v.date <= now)
+        .sort((a, b) => a.date - b.date)
+
+      // Calcul du score qu'avait l'utilisateur il y a 30 jours
+      const score30DaysAgo = user.score - recentValidations.reduce((acc, obj) => acc + obj.score, 0)
 
       const data = []
-      let m = monthPoints
-      range(now.get('day') + 1).slice(1).forEach(index => {
-        const tmpDatesOfDay = datesOfTheMonthSorted.filter(i => i.date.hasSame(beginMonth.setLocale('fr').plus({ day: index }), 'day'))
-        const tmpScoresOfDay = (tmpDatesOfDay || []).map(v => v.score)
-        if (tmpScoresOfDay.length) {
-          m = m + (tmpScoresOfDay.reduce((p, c) => p + c, 0))
-          data.push(m)
-        } else {
-          data.push(m)
-        }
-      })
+      let currentRunningScore = score30DaysAgo
+
+      // On remplit le graphique jour par jour
+      for (let i = 0; i <= 30; i++) {
+        const targetDate = startDate.plus({ days: i })
+        const pointsThatDay = recentValidations
+          .filter(v => v.date.hasSame(targetDate, 'day'))
+          .reduce((acc, obj) => acc + obj.score, 0)
+
+        currentRunningScore += pointsThatDay
+        data.push(currentRunningScore)
+      }
 
       datasets.push({
         label: user.nom,
         data,
         fill: false,
         pointRadius: 2,
-        pointBackgroundColor: colors[count],
-        pointBorderColor: colors[count],
-        borderColor: colors[count],
+        pointBackgroundColor: colors[count % colors.length],
+        borderColor: colors[count % colors.length],
         tension: 0.1
       })
       count++
     }
 
-
-    const width = 650 // px
-    const height = 470 // px
-
-    const chartCallback = (ChartJS) => {
+    const width = 650
+    const height = 470
+    const chartJSNodeCanvas = new ChartJSNodeCanvas({ width, height, chartCallback: (ChartJS) => {
       ChartJS.defaults.responsive = true
       ChartJS.defaults.maintainAspectRatio = false
-    }
-
-    const chartJSNodeCanvas = new ChartJSNodeCanvas({ width, height, chartCallback })
+    }})
 
     const configuration = {
       type: 'line',
-      data: {
-        labels: range(31 + 1).slice(1),
-        datasets
-      },
+      data: { labels, datasets },
       options: {
         scales: {
-          y: {
-            ticks: {
-              color: 'rgba(250,250,250,0.7)'
-            }
-          },
-          x: {
-            ticks: {
-              color: 'rgba(250,250,250,0.7)'
-            }
-          }
+          y: { ticks: { color: 'rgba(250,250,250,0.7)' } },
+          x: { ticks: { color: 'rgba(250,250,250,0.7)', maxRotation: 45, minRotation: 45 } }
         },
         plugins: {
           title: {
             display: true,
-            text: 'Root-Me : ' + DateTime.now().setLocale('fr').toFormat('MMMM yyyy'),
-            font: {
-              size: 18,
-              weight: 'bold'
-            },
-            color: '#fff'
+            text: 'Progression - 30 derniers jours',
+            color: '#fff',
+            font: { size: 18, weight: 'bold' }
           },
-          legend: {
-            display: true,
-            labels: {
-              boxWidth: 10,
-              font: {
-                size: 12
-              },
-              color: '#fafafa'
-            }
-          }
+          legend: { labels: { color: '#fafafa', boxWidth: 10 } }
         }
       },
       plugins: [{
